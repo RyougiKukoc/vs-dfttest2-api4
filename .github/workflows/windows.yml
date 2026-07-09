@@ -98,7 +98,7 @@ jobs:
         if: steps.cache-cuda.outputs.cache-hit != 'true'
         run: |
           curl.exe -sS -L -o cuda_installer.exe https://developer.download.nvidia.com/compute/cuda/${{ matrix.cuda_version }}/network_installers/cuda_${{ matrix.cuda_version }}_windows_network.exe
-          cuda_installer.exe -s nvcc_${{ matrix.cuda_component }} cudart_${{ matrix.cuda_component }} crt_${{ matrix.cuda_component }} nvrtc_${{ matrix.cuda_component }} nvrtc_dev_${{ matrix.cuda_component }} nvptxcompiler_${{ matrix.cuda_component }} nvjitlink_${{ matrix.cuda_component }}
+          cuda_installer.exe -s nvcc_${{ matrix.cuda_component }} cudart_${{ matrix.cuda_component }} crt_${{ matrix.cuda_component }} nvrtc_dev_${{ matrix.cuda_component }} nvptxcompiler_${{ matrix.cuda_component }}
 
       - name: Add CUDA to PATH
         run: |
