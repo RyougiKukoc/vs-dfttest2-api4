@@ -43,6 +43,15 @@ def cuda_root_from_variant(variant: str) -> Path:
     return Path(r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA") / version
 
 
+def resolve_cuda_root(candidate: Path) -> Path:
+    candidates = [candidate.resolve()]
+    candidates.append(candidates[0] / "Library")
+    for root in candidates:
+        if (root / "include" / "nvrtc.h").exists():
+            return root
+    raise FileNotFoundError(candidate / "include" / "nvrtc.h")
+
+
 def find_built_dll(build_dir: Path, name: str) -> Path:
     matches = sorted(build_dir.rglob(name))
     if matches:
@@ -110,9 +119,7 @@ def main(argv: list[str]) -> int:
         shutil.rmtree(dist_dir / PLUGIN_NAME, ignore_errors=True)
 
     vs_include = resolve_vs_include(Path(args.vapoursynth_root) if args.vapoursynth_root else None)
-    cuda_root = Path(args.cuda_root).resolve() if args.cuda_root else cuda_root_from_variant(variant)
-    if not (cuda_root / "include" / "nvrtc.h").exists():
-        raise FileNotFoundError(cuda_root / "include" / "nvrtc.h")
+    cuda_root = resolve_cuda_root(Path(args.cuda_root) if args.cuda_root else cuda_root_from_variant(variant))
 
     env = os.environ.copy()
     env["CUDA_PATH"] = str(cuda_root)
@@ -135,6 +142,8 @@ def main(argv: list[str]) -> int:
             "USE_NVRTC_STATIC=ON",
             "-D",
             "ENABLE_CPU=OFF",
+            "-D",
+            f"CUDAToolkit_ROOT={cuda_root}",
             "-D",
             "CMAKE_CXX_FLAGS=/fp:fast /EHsc",
             "-D",

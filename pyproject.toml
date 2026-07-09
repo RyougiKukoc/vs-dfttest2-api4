@@ -14,8 +14,8 @@ authors = [{ name = "DFTTest2 contributors" }]
 dependencies = ["VapourSynth>=77"]
 
 [project.urls]
-"Source Code" = "https://github.com/AmusementClub/vs-dfttest2"
-"Releases" = "https://github.com/AmusementClub/vs-dfttest2/releases"
+"Source Code" = "https://github.com/RyougiKukoc/vs-dfttest2"
+"Releases" = "https://github.com/RyougiKukoc/vs-dfttest2/releases"
 
 [tool.hatch.build.targets.sdist]
 include = [

@@ -11,8 +11,8 @@ The Windows VCS install path is release-backed. Pick the CUDA runtime family by
 installing from one of the repository tags:
 
 ```powershell
-pip install "vapoursynth-dfttest2 @ git+https://github.com/<owner>/<repo>.git@cu121"
-pip install "vapoursynth-dfttest2 @ git+https://github.com/<owner>/<repo>.git@cu129"
+pip install "vapoursynth-dfttest2 @ git+https://github.com/RyougiKukoc/vs-dfttest2.git@cu121"
+pip install "vapoursynth-dfttest2 @ git+https://github.com/RyougiKukoc/vs-dfttest2.git@cu129"
 ```
 
 `cu121` is built with CUDA 12.1 static NVRTC libraries. `cu129` is built with

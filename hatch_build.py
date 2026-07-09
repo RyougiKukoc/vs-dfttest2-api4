@@ -18,7 +18,7 @@ from packaging import tags
 
 ROOT = Path(__file__).resolve().parent
 PLUGIN_NAME = "dfttest2"
-DEFAULT_REPOSITORY = "AmusementClub/vs-dfttest2"
+DEFAULT_REPOSITORY = "RyougiKukoc/vs-dfttest2"
 SUPPORTED_VARIANTS = {"cu121", "cu129"}
 
 

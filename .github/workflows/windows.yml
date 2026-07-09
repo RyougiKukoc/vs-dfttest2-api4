@@ -54,12 +54,22 @@ jobs:
         include:
           - variant: cu121
             cuda_version: 12.1.1
+            cudart_version: 12.1.105
+            nvrtc_version: 12.1.105
+            nvcc_version: 12.1.105
+            nvjitlink_version: 12.1.105
+            extra_cuda_packages: ""
           - variant: cu129
             cuda_version: 12.9.1
+            cudart_version: 12.9.79
+            nvrtc_version: 12.9.86
+            nvcc_version: 12.9.86
+            nvjitlink_version: 12.9.86
+            extra_cuda_packages: "libnvfatbin=12.9.82 libnvfatbin-dev=12.9.82 libnvfatbin-static=12.9.82"
 
     defaults:
       run:
-        shell: cmd
+        shell: cmd /C call {0}
 
     env:
       DFTTEST2_CUDA_VARIANT: ${{ matrix.variant }}
@@ -79,16 +89,39 @@ jobs:
         run: >-
           "%pythonLocation%\python.exe" -m pip install --upgrade pip build hatchling packaging cmake ninja
 
+      - name: Install CUDA ${{ matrix.cuda_version }} static packages
+        uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: cuda-${{ matrix.variant }}
+          init-shell: cmd.exe
+          cache-downloads: true
+          post-cleanup: environment
+          condarc: |
+            channels:
+              - conda-forge
+            channel_priority: strict
+          create-args: >-
+            cuda-cudart-dev=${{ matrix.cudart_version }}
+            cuda-nvrtc=${{ matrix.nvrtc_version }}
+            cuda-nvrtc-dev=${{ matrix.nvrtc_version }}
+            cuda-nvrtc-static=${{ matrix.nvrtc_version }}
+            cuda-nvcc=${{ matrix.nvcc_version }}
+            libnvjitlink=${{ matrix.nvjitlink_version }}
+            libnvjitlink-dev=${{ matrix.nvjitlink_version }}
+            libnvjitlink-static=${{ matrix.nvjitlink_version }}
+            ${{ matrix.extra_cuda_packages }}
+
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Install CUDA ${{ matrix.cuda_version }}
-        uses: Jimver/cuda-toolkit@v0.2.35
-        with:
-          cuda: ${{ matrix.cuda_version }}
-          method: local
-          sub-packages: '["nvcc", "cudart", "nvrtc_dev", "nvptxcompiler"]'
-          log-file-suffix: ${{ matrix.variant }}.txt
+      - name: Show CUDA package layout
+        run: |
+          echo CONDA_PREFIX=%CONDA_PREFIX%
+          dir "%CONDA_PREFIX%\Library\include\nvrtc.h"
+          dir "%CONDA_PREFIX%\Library\lib\cuda.lib"
+          dir "%CONDA_PREFIX%\Library\lib\nvrtc_static.lib"
+          dir "%CONDA_PREFIX%\Library\lib\nvrtc-builtins_static.lib"
+          dir "%CONDA_PREFIX%\Library\lib\nvptxcompiler_static.lib"
 
       - name: Prepare VapourSynth R77 wheel
         run: >-
@@ -100,6 +133,7 @@ jobs:
           --clean
           --variant ${{ matrix.variant }}
           --dist-dir dist\windows-${{ matrix.variant }}
+          --cuda-root "%CONDA_PREFIX%\Library"
 
       - name: Smoke-load explicit package
         run: >-
