@@ -26,6 +26,7 @@ def resolve_vs_include(vapoursynth_root: Path | None) -> Path:
         candidates.extend(
             [
                 root / "vapoursynth" / "include",
+                root / "Lib" / "site-packages" / "vapoursynth" / "include",
                 root / "include",
             ]
         )
@@ -60,7 +61,37 @@ def find_built_dll(build_dir: Path, name: str) -> Path:
     raise FileNotFoundError(build_dir / name)
 
 
-def stage_package(build_dir: Path, package_parent: Path, variant: str) -> Path:
+def find_cuda_runtime_dlls(cuda_root: Path) -> list[Path]:
+    dll_dirs = [
+        cuda_root / "bin" / "x64",
+        cuda_root / "bin",
+    ]
+    patterns = [
+        "cufft64_*.dll",
+        "cudart64_*.dll",
+        "nvJitLink_*.dll",
+        "nvfatbin_*.dll",
+        "nvptxcompiler_*.dll",
+        "nvrtc64_*.dll",
+    ]
+    found: dict[str, Path] = {}
+    for dll_dir in dll_dirs:
+        if not dll_dir.exists():
+            continue
+        for pattern in patterns:
+            for path in dll_dir.glob(pattern):
+                found.setdefault(path.name.lower(), path)
+    required_patterns = {
+        "cufft64_": "cufft64_*.dll",
+        "cudart64_": "cudart64_*.dll",
+    }
+    for prefix, pattern in required_patterns.items():
+        if not any(name.startswith(prefix) for name in found):
+            raise FileNotFoundError(cuda_root / "bin" / pattern)
+    return [found[name] for name in sorted(found)]
+
+
+def stage_package(build_dir: Path, package_parent: Path, variant: str, cuda_root: Path | None = None) -> Path:
     package_dir = package_parent / PLUGIN_NAME
     if package_dir.exists():
         shutil.rmtree(package_dir)
@@ -69,8 +100,16 @@ def stage_package(build_dir: Path, package_parent: Path, variant: str) -> Path:
     plugin_names = ["dfttest2_cpu"]
     shutil.copy2(find_built_dll(build_dir, "dfttest2_cpu.dll"), package_dir / "dfttest2_cpu.dll")
     if variant in CUDA_VARIANTS:
+        if cuda_root is None:
+            raise RuntimeError("cuda_root is required for CUDA variants")
+        shutil.copy2(find_built_dll(build_dir, "dfttest2_cuda.dll"), package_dir / "dfttest2_cuda.dll")
         shutil.copy2(find_built_dll(build_dir, "dfttest2_nvrtc.dll"), package_dir / "dfttest2_nvrtc.dll")
+        runtime_dir = package_dir / "vsmlrt-cuda"
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        for dll in find_cuda_runtime_dlls(cuda_root):
+            shutil.copy2(dll, runtime_dir / dll.name)
         plugin_names.insert(0, "dfttest2_nvrtc")
+        plugin_names.insert(1, "dfttest2_cuda")
     shutil.copy2(ROOT / "LICENSE", package_dir / "LICENSE")
     (package_dir / "manifest.vs").write_text(
         "[VapourSynth Manifest V1]\n" + "\n".join(plugin_names) + "\n",
@@ -80,7 +119,14 @@ def stage_package(build_dir: Path, package_parent: Path, variant: str) -> Path:
     return package_dir
 
 
-def configure_common(build_dir: Path, vs_include: Path, extra: list[str], env: dict[str, str]) -> None:
+def configure_common(
+    build_dir: Path,
+    vs_include: Path,
+    extra: list[str],
+    env: dict[str, str],
+    *,
+    enable_cuda: bool = False,
+) -> None:
     configure = [
         "cmake",
         "-S",
@@ -92,7 +138,7 @@ def configure_common(build_dir: Path, vs_include: Path, extra: list[str], env: d
         "-D",
         "CMAKE_BUILD_TYPE=Release",
         "-D",
-        "ENABLE_CUDA=OFF",
+        f"ENABLE_CUDA={'ON' if enable_cuda else 'OFF'}",
         "-D",
         "ENABLE_GCC=OFF",
         "-D",
@@ -126,8 +172,9 @@ def main(argv: list[str]) -> int:
     vs_include = resolve_vs_include(Path(args.vapoursynth_root) if args.vapoursynth_root else None)
     env = os.environ.copy()
 
-    nvrtc_build_dir = build_dir / "nvrtc"
+    cuda_build_dir = build_dir / "cuda"
     cpu_build_dir = build_dir / "cpu"
+    cuda_root: Path | None = None
 
     if variant in CUDA_VARIANTS:
         cuda_root = resolve_cuda_root(Path(args.cuda_root) if args.cuda_root else cuda_root_from_variant(variant))
@@ -139,7 +186,7 @@ def main(argv: list[str]) -> int:
             env["PATH"] = os.pathsep.join(path_entries + [env.get("PATH", "")])
 
         configure_common(
-            nvrtc_build_dir,
+            cuda_build_dir,
             vs_include,
             [
                 "-D",
@@ -156,6 +203,7 @@ def main(argv: list[str]) -> int:
                 "CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded",
             ],
             env,
+            enable_cuda=True,
         )
 
     configure_common(
@@ -176,7 +224,7 @@ def main(argv: list[str]) -> int:
         env,
     )
 
-    package_dir = stage_package(build_dir, dist_dir, variant)
+    package_dir = stage_package(build_dir, dist_dir, variant, cuda_root)
     print(f"Packaged {package_dir}")
     return 0
 

@@ -1,9 +1,9 @@
 # vs-dfttest2-api4
 DFTTest re-implementation for VapourSynth API4.
 
-This fork packages the CPU backend and, for CUDA-tagged builds, the
-static-NVRTC backend. The old cuFFT, HIP, HIPRTC, and GCC backend sources are
-kept in the repository, but they are not part of the default Windows package.
+This fork packages the CPU backend and, for CUDA-tagged builds, the NVRTC and
+cuFFT/CUDA backends. The HIP, HIPRTC, and GCC backend sources are kept in the
+repository, but they are not part of the default Windows package.
 
 ## Installation
 
@@ -17,10 +17,10 @@ pip install "vapoursynth-dfttest2 @ git+https://github.com/RyougiKukoc/vs-dfttes
 ```
 
 `cpu` installs only `dfttest2_cpu.dll`. `cu121` installs `dfttest2_cpu.dll`
-plus a CUDA 12.1 static-NVRTC `dfttest2_nvrtc.dll`. `cu129` installs
-`dfttest2_cpu.dll` plus a CUDA 12.9 static-NVRTC `dfttest2_nvrtc.dll`. If you
-switch between tags, use `--force-reinstall` so pip replaces the
-already-installed wheel with the other variant.
+plus CUDA 12.1 builds of `dfttest2_nvrtc.dll` and `dfttest2_cuda.dll`. `cu129`
+does the same with CUDA 12.9. If you switch between tags, use
+`--force-reinstall` so pip replaces the already-installed wheel with the other
+variant.
 
 ## Usage
 
@@ -33,7 +33,8 @@ See also [VapourSynth-DFTTest](https://github.com/HomeOfVapourSynthEvolution/Vap
 
 ## Compilation
 
-The default local CMake configuration builds only CPU and NVRTC:
+The default local CMake configuration builds CPU and NVRTC. Enable
+`ENABLE_CUDA` as well when building the cuFFT backend:
 
 ```powershell
 cmake -S . -B build -G Ninja `

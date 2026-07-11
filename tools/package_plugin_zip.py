@@ -27,12 +27,25 @@ def main(argv: list[str]) -> int:
         package_dir / "manifest.vs",
     ]
     if args.variant in CUDA_VARIANTS:
+        required.append(package_dir / "dfttest2_cuda.dll")
         required.append(package_dir / "dfttest2_nvrtc.dll")
+        for pattern in ("cufft64_*.dll", "cudart64_*.dll"):
+            if not list((package_dir / "vsmlrt-cuda").glob(pattern)):
+                raise FileNotFoundError(package_dir / "vsmlrt-cuda" / pattern)
     for path in required:
         if not path.exists():
             raise FileNotFoundError(path)
+    manifest_text = (package_dir / "manifest.vs").read_text(encoding="ascii", errors="ignore")
+    if args.variant in CUDA_VARIANTS:
+        for plugin_name in ("dfttest2_nvrtc", "dfttest2_cuda", "dfttest2_cpu"):
+            if plugin_name not in manifest_text:
+                raise RuntimeError(f"CUDA package manifest does not list {plugin_name}")
     if args.variant == "cpu" and (package_dir / "dfttest2_nvrtc.dll").exists():
         raise RuntimeError(f"cpu package unexpectedly contains {package_dir / 'dfttest2_nvrtc.dll'}")
+    if args.variant == "cpu" and (package_dir / "dfttest2_cuda.dll").exists():
+        raise RuntimeError(f"cpu package unexpectedly contains {package_dir / 'dfttest2_cuda.dll'}")
+    if args.variant == "cpu" and (package_dir / "vsmlrt-cuda").exists():
+        raise RuntimeError(f"cpu package unexpectedly contains {package_dir / 'vsmlrt-cuda'}")
 
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists():

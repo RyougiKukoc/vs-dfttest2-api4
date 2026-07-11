@@ -130,6 +130,7 @@ def main(argv: list[str]) -> int:
             print(f"missing required path: {path}", file=sys.stderr)
             return 1
     has_nvrtc = (artifact / "dfttest2_nvrtc.dll").exists()
+    has_cuda = (artifact / "dfttest2_cuda.dll").exists()
 
     sys_paths, dll_paths = resolve_vapoursynth_paths(vs_root)
     sys.path.insert(0, str(ROOT))
@@ -142,6 +143,7 @@ def main(argv: list[str]) -> int:
     if cuda_path:
         cuda_root = Path(cuda_path)
         cuda_dirs.extend([cuda_root / "bin" / "x64", cuda_root / "bin"])
+    packaged_cuda_dir = artifact / "vsmlrt-cuda"
 
     add_existing_dll_dirs(
         [
@@ -151,6 +153,7 @@ def main(argv: list[str]) -> int:
             Path(sysconfig.get_paths().get("purelib", "")),
             *(Path(p) for p in site.getsitepackages()),
             *dll_paths,
+            packaged_cuda_dir,
             *cuda_dirs,
         ]
     )
@@ -175,10 +178,14 @@ def main(argv: list[str]) -> int:
         core.std.LoadPlugin(str(artifact / "dfttest2_cpu.dll"))
         if has_nvrtc:
             core.std.LoadPlugin(str(artifact / "dfttest2_nvrtc.dll"))
+        if has_cuda:
+            core.std.LoadPlugin(str(artifact / "dfttest2_cuda.dll"))
 
     expected_namespaces = ["dfttest2_cpu"]
     if has_nvrtc:
         expected_namespaces.append("dfttest2_nvrtc")
+    if has_cuda:
+        expected_namespaces.append("dfttest2_cuda")
     missing = [name for name in expected_namespaces if not has_filter(core, name, "DFTTest")]
     if missing:
         print(f"missing plugin namespaces after loading artifact: {missing}", file=sys.stderr)
@@ -186,6 +193,8 @@ def main(argv: list[str]) -> int:
     print(core.dfttest2_cpu.DFTTest)
     if has_nvrtc:
         print(core.dfttest2_nvrtc.DFTTest)
+    if has_cuda:
+        print(core.dfttest2_cuda.DFTTest)
 
     if args.exercise_cpu_filter:
         try:

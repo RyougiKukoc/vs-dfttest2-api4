@@ -146,17 +146,31 @@ def _stage_package_from_zip(archive_path: Path, target_dir: Path, variant: str) 
         target_dir / "dfttest2_cpu.dll",
     ]
     if variant in CUDA_VARIANTS:
+        required.append(target_dir / "dfttest2_cuda.dll")
         required.append(target_dir / "dfttest2_nvrtc.dll")
+        for pattern in ("cufft64_*.dll", "cudart64_*.dll"):
+            if not list((target_dir / "vsmlrt-cuda").glob(pattern)):
+                raise FileNotFoundError(f"prebuilt archive did not provide vsmlrt-cuda/{pattern}")
     for path in required:
         if not path.exists():
             raise FileNotFoundError(f"prebuilt archive did not provide {path.name}")
 
     manifest_text = (target_dir / "manifest.vs").read_text(encoding="ascii", errors="ignore")
+    if variant in CUDA_VARIANTS:
+        for plugin_name in ("dfttest2_nvrtc", "dfttest2_cuda", "dfttest2_cpu"):
+            if plugin_name not in manifest_text:
+                raise RuntimeError(f"CUDA prebuilt archive manifest does not list {plugin_name}")
     if variant == "cpu":
         if (target_dir / "dfttest2_nvrtc.dll").exists():
             raise RuntimeError("cpu prebuilt archive unexpectedly contains dfttest2_nvrtc.dll")
+        if (target_dir / "dfttest2_cuda.dll").exists():
+            raise RuntimeError("cpu prebuilt archive unexpectedly contains dfttest2_cuda.dll")
+        if (target_dir / "vsmlrt-cuda").exists():
+            raise RuntimeError("cpu prebuilt archive unexpectedly contains vsmlrt-cuda")
         if "dfttest2_nvrtc" in manifest_text:
             raise RuntimeError("cpu prebuilt archive manifest unexpectedly lists dfttest2_nvrtc")
+        if "dfttest2_cuda" in manifest_text:
+            raise RuntimeError("cpu prebuilt archive manifest unexpectedly lists dfttest2_cuda")
 
 
 def _stage_prebuilt_plugin(variant: str, target_dir: Path) -> bool:
@@ -210,12 +224,18 @@ def _stage_local_build(variant: str, target_dir: Path) -> None:
     )
     required = [target_dir / "dfttest2_cpu.dll"]
     if variant in CUDA_VARIANTS:
+        required.append(target_dir / "dfttest2_cuda.dll")
         required.append(target_dir / "dfttest2_nvrtc.dll")
+        for pattern in ("cufft64_*.dll", "cudart64_*.dll"):
+            if not list((target_dir / "vsmlrt-cuda").glob(pattern)):
+                raise FileNotFoundError(target_dir / "vsmlrt-cuda" / pattern)
     for path in required:
         if not path.exists():
             raise FileNotFoundError(path)
     if variant == "cpu" and (target_dir / "dfttest2_nvrtc.dll").exists():
         raise RuntimeError(f"cpu local build unexpectedly staged {target_dir / 'dfttest2_nvrtc.dll'}")
+    if variant == "cpu" and (target_dir / "dfttest2_cuda.dll").exists():
+        raise RuntimeError(f"cpu local build unexpectedly staged {target_dir / 'dfttest2_cuda.dll'}")
 
 
 class CustomHook(BuildHookInterface[Any]):

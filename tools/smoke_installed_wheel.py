@@ -65,6 +65,7 @@ def main(argv: list[str]) -> int:
             print(f"missing installed file: {path}", file=sys.stderr)
             return 1
     has_nvrtc = (plugin_dir / "dfttest2_nvrtc.dll").exists()
+    has_cuda = (plugin_dir / "dfttest2_cuda.dll").exists()
 
     cuda_path = os.environ.get("CUDA_PATH")
     cuda_dirs = []
@@ -75,6 +76,7 @@ def main(argv: list[str]) -> int:
     add_existing_dll_dirs(
         [
             plugin_dir,
+            plugin_dir / "vsmlrt-cuda",
             vs_pkg,
             Path(sys.executable).resolve().parent,
             Path(sysconfig.get_paths().get("platlib", "")),
@@ -92,9 +94,14 @@ def main(argv: list[str]) -> int:
     if has_nvrtc and (not hasattr(core, "dfttest2_nvrtc") or not hasattr(core.dfttest2_nvrtc, "DFTTest")):
         print("core.dfttest2_nvrtc.DFTTest missing after installed-wheel autoload", file=sys.stderr)
         return 1
+    if has_cuda and (not hasattr(core, "dfttest2_cuda") or not hasattr(core.dfttest2_cuda, "DFTTest")):
+        print("core.dfttest2_cuda.DFTTest missing after installed-wheel autoload", file=sys.stderr)
+        return 1
     print(core.dfttest2_cpu.DFTTest)
     if has_nvrtc:
         print(core.dfttest2_nvrtc.DFTTest)
+    if has_cuda:
+        print(core.dfttest2_cuda.DFTTest)
 
     if args.exercise_cpu_filter:
         try:

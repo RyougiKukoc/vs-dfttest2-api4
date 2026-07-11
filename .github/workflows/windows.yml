@@ -1,4 +1,4 @@
-name: Build Windows CPU/NVRTC
+name: Build Windows DFTTest2
 
 on:
   push:
@@ -12,6 +12,7 @@ on:
       - "CMakeLists.txt"
       - "common/**"
       - "cpu_source/**"
+      - "cuda_source/**"
       - "dfttest2/**"
       - "dfttest2.py"
       - "hatch_build.py"
@@ -24,6 +25,7 @@ on:
       - "CMakeLists.txt"
       - "common/**"
       - "cpu_source/**"
+      - "cuda_source/**"
       - "dfttest2/**"
       - "dfttest2.py"
       - "hatch_build.py"
@@ -60,6 +62,7 @@ jobs:
             nvrtc_version: ""
             nvcc_version: ""
             nvjitlink_version: ""
+            cufft_version: ""
             extra_cuda_packages: ""
           - variant: cu121
             cuda_enabled: true
@@ -68,6 +71,7 @@ jobs:
             nvrtc_version: 12.1.105
             nvcc_version: 12.1.105
             nvjitlink_version: 12.1.105
+            cufft_version: 11.0.2.54
             extra_cuda_packages: ""
           - variant: cu129
             cuda_enabled: true
@@ -76,6 +80,7 @@ jobs:
             nvrtc_version: 12.9.86
             nvcc_version: 12.9.86
             nvjitlink_version: 12.9.86
+            cufft_version: 11.4.1.4
             extra_cuda_packages: "libnvfatbin=12.9.82 libnvfatbin-dev=12.9.82 libnvfatbin-static=12.9.82"
 
     defaults:
@@ -126,6 +131,8 @@ jobs:
             libnvjitlink=${{ matrix.nvjitlink_version }}
             libnvjitlink-dev=${{ matrix.nvjitlink_version }}
             libnvjitlink-static=${{ matrix.nvjitlink_version }}
+            libcufft=${{ matrix.cufft_version }}
+            libcufft-dev=${{ matrix.cufft_version }}
             ${{ matrix.extra_cuda_packages }}
 
       - name: Show CUDA package layout
@@ -138,6 +145,8 @@ jobs:
           dir "%CUDA_ROOT%\lib\nvrtc_static.lib"
           dir "%CUDA_ROOT%\lib\nvrtc-builtins_static.lib"
           dir "%CUDA_ROOT%\lib\nvptxcompiler_static.lib"
+          dir "%CUDA_ROOT%\lib\cufft.lib"
+          dir "%CUDA_ROOT%\bin\cufft64_*.dll"
 
       - name: Prepare VapourSynth R77 wheel
         run: >-
@@ -151,7 +160,7 @@ jobs:
           --variant ${{ matrix.variant }}
           --dist-dir dist\windows-${{ matrix.variant }}
 
-      - name: Build CPU/NVRTC package directory
+      - name: Build CPU/CUDA package directory
         if: ${{ matrix.cuda_enabled }}
         run: >-
           "%pythonLocation%\python.exe" tools\ci_build_windows.py

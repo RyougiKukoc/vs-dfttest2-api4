@@ -24,6 +24,7 @@ include = [
   "README.md",
   "common",
   "cpu_source",
+  "cuda_source",
   "dfttest2",
   "dfttest2.py",
   "hatch_build.py",
