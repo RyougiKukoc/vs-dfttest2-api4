@@ -335,7 +335,7 @@ static std::variant<CUmodule, std::string> compile(
     kernel_source << "#define WARP_SIZE " << warp_size << '\n';
     kernel_source << "#define WARPS_PER_BLOCK " << warps_per_block << '\n';
     if (sample_type == stInteger) {
-        int bytes_per_sample = bits_per_sample / 8;
+        int bytes_per_sample = (bits_per_sample + 7) / 8;
         const char * type {};
         if (bytes_per_sample == 1) {
             type = "unsigned char";
@@ -746,6 +746,15 @@ static void VS_CC DFTTestCreate(
     };
 
     auto vi = vsapi->getVideoInfo(d->node);
+    if (!vsh::isConstantVideoFormat(vi)) {
+        return set_error("only constant format input is supported");
+    }
+    if (vi->format.sampleType == stInteger && vi->format.bytesPerSample > 2) {
+        return set_error("only 8-16 bit integer format input is supported");
+    }
+    if (vi->format.sampleType == stFloat && vi->format.bitsPerSample != 32) {
+        return set_error("only 32-bit float format input is supported");
+    }
 
     auto user_kernel = vsapi->mapGetData(in, "kernel", 0, nullptr);
 

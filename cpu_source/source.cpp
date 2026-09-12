@@ -140,6 +140,23 @@ static void VS_CC DFTTestCreate(
         d->process[plane] = true;
     }
 
+    d->zero_mean = !!vsapi->mapGetInt(in, "zero_mean", 0, &error);
+    if (error) {
+        d->zero_mean = true;
+    }
+
+    const int window_size = (2 * d->radius + 1) * d->block_size * d->block_size;
+    const int spectrum_size = (2 * d->radius + 1) * d->block_size * (d->block_size / 2 + 1);
+    if (vsapi->mapNumElements(in, "window") != window_size) {
+        return set_error("invalid window size");
+    }
+    if (vsapi->mapNumElements(in, "sigma") != spectrum_size) {
+        return set_error("invalid sigma size");
+    }
+    if (d->zero_mean && vsapi->mapNumElements(in, "window_freq") != spectrum_size * 2) {
+        return set_error("window_freq must contain the complex window spectrum when zero_mean is enabled");
+    }
+
     {
         auto ptr = vsh::vsh_aligned_malloc<float>(
             (2 * d->radius + 1) * d->block_size * d->block_size * sizeof(float),
@@ -185,10 +202,6 @@ static void VS_CC DFTTestCreate(
 
     d->filter_type = static_cast<int>(vsapi->mapGetInt(in, "filter_type", 0, nullptr));
 
-    d->zero_mean = !!vsapi->mapGetInt(in, "zero_mean", 0, &error);
-    if (error) {
-        d->zero_mean = true;
-    }
     if (d->zero_mean) {
         {
             auto ptr = vsh::vsh_aligned_malloc<float>(

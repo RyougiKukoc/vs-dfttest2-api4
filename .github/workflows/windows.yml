@@ -184,6 +184,15 @@ jobs:
           --autoload
           --exercise-cpu-filter
 
+      - name: Test native contracts, helper behavior, and autoload isolation
+        # The native negative tests run before packaging; GPU format rejection
+        # is checked before driver initialization on hosted runners.
+        # Runtime GPU identity tests are available via --gpu on an NVIDIA host.
+        run: >-
+          "%pythonLocation%\python.exe" tools\test_regressions.py
+          --vapoursynth-root _deps\vapoursynth-wheel-R77
+          --artifact-dir dist\windows-${{ matrix.variant }}
+
       - name: Pack release zip
         run: >-
           "%pythonLocation%\python.exe" tools\package_plugin_zip.py
