@@ -7,6 +7,7 @@ Pass --gpu on a compatible NVIDIA machine to execute both GPU backends.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import importlib.util
 import json
@@ -56,6 +57,14 @@ def pattern_clip(core, vs):
 
 def helper_contracts(core, vs) -> None:
     clip = pattern_clip(core, vs)
+    options = [0]
+    targets = core.dfttest2_cpu.Version()["dispatch_targets"]
+    if isinstance(targets, list):
+        for opt, target in enumerate(targets[1:], start=1):
+            if target.lower() == "sse2" or (
+                target.lower() == "avx2" and ctypes.windll.kernel32.IsProcessorFeaturePresent(40)
+            ):
+                options.append(opt)
     for index, relative in enumerate(("dfttest2.py", "dfttest2/_dfttest2.py")):
         helper = load_helper(ROOT / relative, f"regression_helper_{index}")
         calls = []
@@ -65,13 +74,14 @@ def helper_contracts(core, vs) -> None:
             return core.dfttest2_cpu.DFTTest(*args, **kwargs)
 
         helper.core = SimpleNamespace(dfttest2_cpu=SimpleNamespace(RDFT=core.dfttest2_cpu.RDFT, DFTTest=capture))
-        output = []
-        for beta in (0.7, 2.0):
-            result = helper.DFTTest(clip, backend=helper.Backend.CPU(), f0beta=beta)
-            # The exponent is dimensionless: it must reach native pmin unchanged.
-            assert calls[-1]["filter_type"] == 5 and calls[-1]["pmin"] == beta, calls[-1]["pmin"]
-            output.append(frame_hash(result, 2))
-        assert output[0] != output[1], "different exponents produced identical output"
+        for opt in options:
+            output = []
+            for beta in (0.7, 2.0):
+                result = helper.DFTTest(clip, backend=helper.Backend.CPU(opt=opt), f0beta=beta)
+                # The exponent is dimensionless: it must reach native pmin unchanged.
+                assert calls[-1]["filter_type"] == 5 and calls[-1]["pmin"] == beta, calls[-1]["pmin"]
+                output.append(frame_hash(result, 2))
+            assert output[0] != output[1], f"different exponents produced identical output with opt={opt}"
 
         # Multiplying all frequency coefficients by zero yields zero, unless
         # the mean was deliberately removed and restored by zero_mean=True.

@@ -6,6 +6,11 @@
 #include <VSHelper4.h>
 
 #include "dfttest2_cpu.h"
+#ifdef VCL_NAMESPACE
+using namespace VCL_NAMESPACE;
+// instrset_detect.cpp is compiled once, without a per-ISA namespace.
+int instrset_detect();
+#endif
 #include "kernel.hpp"
 
 
@@ -426,7 +431,7 @@ bool supported_arch() noexcept {
 bool SUPPORTED_ARCH_NAME() noexcept {
 #endif // HAS_DISPATCH
 
-    return instrset_detect() >= INSTRSET;
+    return ::instrset_detect() >= INSTRSET;
 }
 
 #ifndef HAS_DISPATCH

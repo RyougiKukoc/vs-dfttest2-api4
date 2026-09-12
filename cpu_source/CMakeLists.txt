@@ -70,6 +70,9 @@ if(CPU_DISPATCH_TARGETS)
         )
 
         target_compile_definitions(${current_target} PRIVATE HAS_DISPATCH)
+        # Vector class types and non-inlined math templates have different
+        # implementations/ABIs for each ISA. Keep their linker symbols apart.
+        target_compile_definitions(${current_target} PRIVATE VCL_NAMESPACE=dfttest_vcl_${arch})
         target_compile_definitions(${current_target} PRIVATE DFTTEST_GETFRAME_NAME=${current_getframe_name})
         target_compile_definitions(${current_target} PRIVATE SUPPORTED_ARCH_NAME=${current_supported_arch_name})
 
