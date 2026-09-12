@@ -223,6 +223,9 @@ jobs:
           "%pythonLocation%\python.exe" tools\smoke_installed_wheel.py --exercise-cpu-filter
 
       - name: Upload package directory
+        # Preserve the exact native binaries when a regression fails so they
+        # can be investigated without publishing a release.
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: dfttest2-${{ matrix.variant }}-package
