@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22.0)
 
-project(vs-dfttest2 VERSION 10.0 LANGUAGES CXX)
+project(vs-dfttest2 VERSION 10.1 LANGUAGES CXX)
 
 set(ENABLE_CUDA OFF CACHE BOOL "Whether to compile with cuFFT backend")
 set(ENABLE_NVRTC ON CACHE BOOL "Whether to compile with NVRTC backend")

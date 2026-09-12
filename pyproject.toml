@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vapoursynth-dfttest2"
-version = "10.0"
+version = "10.1"
 description = "DFTTest2 frequency-domain denoiser plugin for VapourSynth"
 readme = "README.md"
 license = { file = "LICENSE" }
