@@ -11,6 +11,7 @@ import ctypes
 import hashlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -57,6 +58,7 @@ def pattern_clip(core, vs):
 
 def helper_contracts(core, vs) -> None:
     clip = pattern_clip(core, vs)
+    flat_float = core.std.BlankClip(width=64, height=48, length=1, format=vs.GRAYS, color=[0.5])
     options = [0]
     targets = core.dfttest2_cpu.Version()["dispatch_targets"]
     if isinstance(targets, list):
@@ -65,6 +67,7 @@ def helper_contracts(core, vs) -> None:
                 target.lower() == "avx2" and ctypes.windll.kernel32.IsProcessorFeaturePresent(40)
             ):
                 options.append(opt)
+    print(f"Checking CPU dispatch options {options}")
     for index, relative in enumerate(("dfttest2.py", "dfttest2/_dfttest2.py")):
         helper = load_helper(ROOT / relative, f"regression_helper_{index}")
         calls = []
@@ -81,6 +84,18 @@ def helper_contracts(core, vs) -> None:
                 # The exponent is dimensionless: it must reach native pmin unchanged.
                 assert calls[-1]["filter_type"] == 5 and calls[-1]["pmin"] == beta, calls[-1]["pmin"]
                 output.append(frame_hash(result, 2))
+
+                # A constant float clip with rectangular 16x16 windows has only
+                # DC: (0.5 * 255 * 16)^2 = 4161600. With sigma half that power,
+                # the multiplier is exactly 0.5**beta. This scalar expectation
+                # detects an incorrect pow implementation even if outputs vary.
+                analytic = helper.DFTTest(
+                    flat_float, backend=helper.Backend.CPU(opt=opt), sigma=2080800,
+                    f0beta=beta, tbsize=1, sosize=0, swin=7, twin=7, zmean=False,
+                )
+                expected = 0.5 * math.pow(0.5, beta)
+                for row in analytic.get_frame(0)[0].tolist():
+                    assert all(abs(value - expected) < 1e-6 for value in row), (opt, beta, expected, row)
             assert output[0] != output[1], f"different exponents produced identical output with opt={opt}"
 
         # Multiplying all frequency coefficients by zero yields zero, unless
