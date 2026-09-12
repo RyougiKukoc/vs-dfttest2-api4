@@ -7,6 +7,10 @@ import sys
 import sysconfig
 from pathlib import Path
 
+# Portable Python may omit the script directory from sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vs_test_utils import assert_plugin_paths, test_core
+
 
 PLUGIN_NAME = "dfttest2"
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,54 +45,12 @@ def resolve_artifact(root: Path) -> Path:
     raise FileNotFoundError(root / PLUGIN_NAME / "dfttest2_cpu.dll")
 
 
-def add_existing_dll_dirs(paths: list[Path]) -> None:
-    for path in paths:
-        if path.exists():
-            os.add_dll_directory(str(path))
+def add_existing_dll_dirs(paths: list[Path]) -> list[object]:
+    return [os.add_dll_directory(str(path)) for path in paths if path.exists()]
 
 
 def has_filter(core: object, namespace: str, function: str) -> bool:
     return hasattr(core, namespace) and hasattr(getattr(core, namespace), function)
-
-
-def make_core(vs: object, *, autoload: bool) -> object:
-    flags = 0 if autoload else vs.DISABLE_AUTO_LOADING
-    create_environment = getattr(vs, "create_environment", None)
-    if create_environment is not None:
-        for factory in (
-            lambda: create_environment(flags=flags),
-            lambda: create_environment(flags),
-        ):
-            try:
-                env = factory()
-                return env.get_core()
-            except Exception:
-                continue
-
-    create_core = getattr(vs, "create_core", None)
-    if create_core is not None:
-        for factory in (
-            lambda: create_core(flags=flags),
-            lambda: create_core(flags),
-        ):
-            try:
-                return factory()
-            except Exception:
-                continue
-
-    core_type = getattr(vs, "Core", None)
-    if core_type is not None:
-        for factory in (
-            lambda: core_type(flags=flags),
-            lambda: core_type(flags),
-            lambda: core_type(),
-        ):
-            try:
-                return factory()
-            except Exception:
-                continue
-
-    return vs.core
 
 
 def exercise_cpu_filter(core: object, vs: object) -> None:
@@ -130,6 +92,7 @@ def main(argv: list[str]) -> int:
             print(f"missing required path: {path}", file=sys.stderr)
             return 1
     has_nvrtc = (artifact / "dfttest2_nvrtc.dll").exists()
+    has_cuda = (artifact / "dfttest2_cuda.dll").exists()
 
     sys_paths, dll_paths = resolve_vapoursynth_paths(vs_root)
     sys.path.insert(0, str(ROOT))
@@ -142,8 +105,9 @@ def main(argv: list[str]) -> int:
     if cuda_path:
         cuda_root = Path(cuda_path)
         cuda_dirs.extend([cuda_root / "bin" / "x64", cuda_root / "bin"])
+    packaged_cuda_dir = artifact / "vsmlrt-cuda"
 
-    add_existing_dll_dirs(
+    dll_handles = add_existing_dll_dirs(
         [
             artifact,
             Path(sys.executable).resolve().parent,
@@ -151,6 +115,7 @@ def main(argv: list[str]) -> int:
             Path(sysconfig.get_paths().get("purelib", "")),
             *(Path(p) for p in site.getsitepackages()),
             *dll_paths,
+            packaged_cuda_dir,
             *cuda_dirs,
         ]
     )
@@ -169,31 +134,43 @@ def main(argv: list[str]) -> int:
         print(f"failed to import VapourSynth Python module: {exc}", file=sys.stderr)
         return 1
 
-    core = make_core(vs, autoload=args.autoload)
+    try:
+        with test_core(vs, autoload=args.autoload) as core:
+            if not args.autoload:
+                core.std.LoadPlugin(str(artifact / "dfttest2_cpu.dll"))
+                if has_nvrtc:
+                    core.std.LoadPlugin(str(artifact / "dfttest2_nvrtc.dll"))
+                if has_cuda:
+                    core.std.LoadPlugin(str(artifact / "dfttest2_cuda.dll"))
 
-    if not args.autoload:
-        core.std.LoadPlugin(str(artifact / "dfttest2_cpu.dll"))
-        if has_nvrtc:
-            core.std.LoadPlugin(str(artifact / "dfttest2_nvrtc.dll"))
+            assert_plugin_paths(core, artifact)
 
-    expected_namespaces = ["dfttest2_cpu"]
-    if has_nvrtc:
-        expected_namespaces.append("dfttest2_nvrtc")
-    missing = [name for name in expected_namespaces if not has_filter(core, name, "DFTTest")]
-    if missing:
-        print(f"missing plugin namespaces after loading artifact: {missing}", file=sys.stderr)
-        return 1
-    print(core.dfttest2_cpu.DFTTest)
-    if has_nvrtc:
-        print(core.dfttest2_nvrtc.DFTTest)
+            expected_namespaces = ["dfttest2_cpu"]
+            if has_nvrtc:
+                expected_namespaces.append("dfttest2_nvrtc")
+            if has_cuda:
+                expected_namespaces.append("dfttest2_cuda")
+            missing = [name for name in expected_namespaces if not has_filter(core, name, "DFTTest")]
+            if missing:
+                print(f"missing plugin namespaces after loading artifact: {missing}", file=sys.stderr)
+                return 1
+            print(core.dfttest2_cpu.DFTTest)
+            if has_nvrtc:
+                print(core.dfttest2_nvrtc.DFTTest)
+            if has_cuda:
+                print(core.dfttest2_cuda.DFTTest)
 
-    if args.exercise_cpu_filter:
-        try:
-            exercise_cpu_filter(core, vs)
-        except Exception as exc:
-            print(f"CPU filter exercise failed: {exc}", file=sys.stderr)
-            return 1
-    return 0
+            if args.exercise_cpu_filter:
+                try:
+                    exercise_cpu_filter(core, vs)
+                except Exception as exc:
+                    print(f"CPU filter exercise failed: {exc}", file=sys.stderr)
+                    return 1
+            return 0
+    finally:
+        for handle in dll_handles:
+            handle.close()
+
 
 
 if __name__ == "__main__":

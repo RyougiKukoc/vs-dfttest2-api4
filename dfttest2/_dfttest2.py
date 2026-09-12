@@ -339,7 +339,10 @@ def DFTTest2(
             sigma_array = [s * wscale for s in sigma_array]
         sigma2 *= wscale
 
-    pmin *= wscale
+    if filter_type == 5:
+        pmin = f0beta  # The exponent is dimensionless.
+    else:
+        pmin *= wscale
     pmax *= wscale
 
     if isinstance(backend, Backend.cuFFT):
@@ -379,6 +382,7 @@ def DFTTest2(
             radius=radius,
             block_size=block_size,
             block_step=block_step,
+            zero_mean=zero_mean,
             planes=planes,
             filter_type=filter_type,
             window_freq=window_freq,

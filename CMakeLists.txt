@@ -33,8 +33,10 @@ if(ENABLE_CUDA)
     target_link_libraries(dfttest2_cuda PRIVATE CUDA::cuda_driver CUDA::cufft)
 
     if(WIN32 AND MSVC)
+        math(EXPR CUDA_CUFFT_DLL_MAJOR "${CUDAToolkit_VERSION_MAJOR} - 1")
+        set(CUDA_CUFFT_DELAYLOAD_DLL "cufft64_${CUDA_CUFFT_DLL_MAJOR}.dll")
         target_link_libraries(dfttest2_cuda PRIVATE delayimp)
-        target_link_options(dfttest2_cuda PRIVATE "/DELAYLOAD:nvcuda.dll" "/DELAYLOAD:cufft64_12.dll")
+        target_link_options(dfttest2_cuda PRIVATE "/DELAYLOAD:nvcuda.dll" "/DELAYLOAD:${CUDA_CUFFT_DELAYLOAD_DLL}")
     endif()
 endif()
 
