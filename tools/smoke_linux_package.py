@@ -7,7 +7,6 @@ import hashlib
 import json
 import os
 import sys
-import sysconfig
 import tempfile
 import zipfile
 from pathlib import Path
@@ -102,7 +101,9 @@ def main(argv: list[str]) -> int:
     if args.installed:
         args.artifact_dir = None
         args.artifact_zip = None
-        package = Path(sysconfig.get_paths()["platlib"]) / "vapoursynth" / "plugins" / PLUGIN_NAME
+        import vapoursynth
+
+        package = Path(vapoursynth.__file__).resolve().parent / "plugins" / PLUGIN_NAME
         os.environ["VAPOURSYNTH_EXTRA_PLUGIN_PATH"] = str(package.parent)
     elif args.artifact_dir:
         args.artifact_dir = str(Path(args.artifact_dir).resolve())
