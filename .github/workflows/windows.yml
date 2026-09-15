@@ -409,8 +409,9 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          python -m pip install --upgrade "VapourSynth==79"
-          python -m pip install --force-reinstall --no-deps -v "vapoursynth-dfttest2 @ git+https://github.com/${GITHUB_REPOSITORY}.git@${TAG}" 2>&1 | tee pip-vcs.log
+          python -m venv vcs-venv
+          vcs-venv/bin/python -m pip install --upgrade pip "VapourSynth==79"
+          vcs-venv/bin/python -m pip install --force-reinstall --no-deps -v "vapoursynth-dfttest2 @ git+https://github.com/${GITHUB_REPOSITORY}.git@${TAG}" 2>&1 | tee pip-vcs.log
           grep "DFTTest2 wheel build: using ${TAG} prebuilt release asset" pip-vcs.log
-          test -f "$(python -c 'import vapoursynth; print(vapoursynth.__path__[0])')/plugins/dfttest2/dfttest2_cpu.so"
-          if [ "$TAG" = cpu ]; then python tools/smoke_linux_package.py --installed; fi
+          test -f "$(vcs-venv/bin/python -c 'import vapoursynth; print(vapoursynth.__path__[0])')/plugins/dfttest2/dfttest2_cpu.so"
+          if [ "$TAG" = cpu ]; then vcs-venv/bin/python tools/smoke_linux_package.py --installed; fi
