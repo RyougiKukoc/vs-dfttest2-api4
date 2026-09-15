@@ -96,7 +96,7 @@ jobs:
 
       - name: Install Python build tools
         run: >-
-          "%pythonLocation%\python.exe" -m pip install --upgrade pip build hatchling packaging cmake ninja
+          "%pythonLocation%\python.exe" -m pip install --upgrade pip build hatchling packaging cmake ninja "VapourSynth==79"
 
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -248,11 +248,11 @@ jobs:
             cuda: false
           - variant: cu121
             image: nvidia/cuda:12.1.1-devel-ubi8
-            wheel_tag: manylinux_2_28_x86_64
+            wheel_tag: manylinux_2_27_x86_64
             cuda: true
           - variant: cu129
             image: nvidia/cuda:12.9.1-devel-ubi8
-            wheel_tag: manylinux_2_28_x86_64
+            wheel_tag: manylinux_2_27_x86_64
             cuda: true
 
     steps:
@@ -313,9 +313,9 @@ jobs:
           - variant: cpu
             wheel_tag: manylinux_2_27_x86_64
           - variant: cu121
-            wheel_tag: manylinux_2_28_x86_64
+            wheel_tag: manylinux_2_27_x86_64
           - variant: cu129
-            wheel_tag: manylinux_2_28_x86_64
+            wheel_tag: manylinux_2_27_x86_64
 
     steps:
       - name: Checkout smoke helpers
@@ -340,7 +340,7 @@ jobs:
           unzip -q dist/dfttest2-${{ matrix.variant }}-linux-x86_64.zip -d release
           test -f release/dfttest2/dfttest2_cpu.so
           test -f release/dfttest2/manifest.vs
-          readelf --version-info release/dfttest2/dfttest2_cpu.so
+          python tools/check_linux_abi.py release/dfttest2 --max-glibc 2.27 --max-glibcxx 3.4.22
           python tools/smoke_linux_package.py --artifact-zip dist/dfttest2-${{ matrix.variant }}-linux-x86_64.zip --skip-cuda
 
       - name: Build wheel from the tested Linux payload
@@ -354,6 +354,7 @@ jobs:
         run: |
           unzip -q dist/wheels-linux-${{ matrix.variant }}/*.whl -d wheel
           find wheel/vapoursynth/plugins/dfttest2 -type f -name '*.so' -print -exec readelf --version-info {} \;
+          python tools/check_linux_abi.py wheel/vapoursynth/plugins/dfttest2 --max-glibc 2.27 --max-glibcxx 3.4.22
 
       - name: Install and autoload CPU wheel
         if: ${{ matrix.variant == 'cpu' }}

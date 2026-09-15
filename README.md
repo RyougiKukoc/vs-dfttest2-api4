@@ -24,10 +24,13 @@ plugins; the NVIDIA driver is supplied by the host. If you switch between tags, 
 variant.
 
 On Linux x86_64, the hook downloads `dfttest2-<variant>-linux-x86_64.zip` from
-the matching `cpu`, `cu121`, or `cu129` Release. The CPU wheel is tagged
-`manylinux_2_27_x86_64`. CUDA 12.1 and CUDA 12.9 wheels are tagged
-`manylinux_2_28_x86_64`, matching their UBI 8 toolkit build environment. The
-VapourSynth R79 runtime itself requires a compatible glibc 2.27 environment.
+the matching `cpu`, `cu121`, or `cu129` Release. All Linux wheels are tagged
+`manylinux_2_27_x86_64`. Package-wide ABI inspection finds a maximum of GLIBC
+2.14 / GLIBCXX 3.4.18 for CPU, GLIBC 2.27 / GLIBCXX 3.4.22 for cu121, and
+GLIBC 2.27 / GLIBCXX 3.4.21 for cu129; each CUDA package includes
+`libcufft.so.11` and `libcudart.so.12`, both at or below the same GLIBC floor.
+The static NVRTC archives do not add a runtime ELF payload. VapourSynth R79
+itself requires a compatible glibc 2.27 environment.
 Set `DFTTEST2_FORCE_BUILD=1` to use the local CMake fallback. It obtains API4
 headers and `vapoursynth.pc` from the isolated build environment's
 `vapoursynth/pkgconfig` directory while retaining any existing
