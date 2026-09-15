@@ -395,6 +395,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -eux
+          version=$(python -c "from pathlib import Path; import tomllib; print(tomllib.loads(Path('pyproject.toml').read_text())['project']['version'])")
           assets=(
             "$(find "assets/dfttest2-${TAG}-release-zip" -type f -name "dfttest2-${TAG}-win64.zip")"
             "$(find "assets/dfttest2-${TAG}-wheel-win64" -type f -name 'vapoursynth_dfttest2-*-win_amd64.whl')"
@@ -404,10 +405,27 @@ jobs:
           for asset in "${assets[@]}"; do test -n "$asset"; done
           test "${#assets[@]}" -eq 4
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            mapfile -t stale_wheels < <(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name | select(test("^vapoursynth_dfttest2-.*\\.whl$"))')
+            if [ "${#stale_wheels[@]}" -gt 0 ]; then
+              for wheel in "${stale_wheels[@]}"; do
+                gh release delete-asset "$TAG" "$wheel" --yes --repo "$GITHUB_REPOSITORY"
+              done
+            fi
             gh release upload "$TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$TAG" "${assets[@]}" --title "$TAG" --notes "Automated DFTTest2 ${TAG} Windows and Linux build." --repo "$GITHUB_REPOSITORY"
           fi
+          expected_assets=(
+            "dfttest2-${TAG}-linux-x86_64.zip"
+            "dfttest2-${TAG}-win64.zip"
+            "vapoursynth_dfttest2-${version}-py3-none-manylinux_2_27_x86_64.whl"
+            "vapoursynth_dfttest2-${version}-py3-none-win_amd64.whl"
+          )
+          mapfile -t published_assets < <(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          test "${#published_assets[@]}" -eq "${#expected_assets[@]}"
+          for asset in "${expected_assets[@]}"; do
+            printf '%s\n' "${published_assets[@]}" | grep -Fx "$asset"
+          done
 
       - name: Prove remote VCS asset selection
         env:
