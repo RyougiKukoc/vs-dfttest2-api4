@@ -412,4 +412,5 @@ jobs:
           python -m pip install --upgrade "VapourSynth==79"
           python -m pip install --force-reinstall --no-deps -v "vapoursynth-dfttest2 @ git+https://github.com/${GITHUB_REPOSITORY}.git@${TAG}" 2>&1 | tee pip-vcs.log
           grep "DFTTest2 wheel build: using ${TAG} prebuilt release asset" pip-vcs.log
-          test -f "$(python -c 'import sysconfig; print(sysconfig.get_paths()["platlib"])')/vapoursynth/plugins/dfttest2/dfttest2_cpu.so"
+          test -f "$(python -c 'import vapoursynth; print(vapoursynth.__path__[0])')/plugins/dfttest2/dfttest2_cpu.so"
+          if [ "$TAG" = cpu ]; then python tools/smoke_linux_package.py --installed; fi
