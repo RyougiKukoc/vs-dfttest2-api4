@@ -7,8 +7,8 @@ repository, but they are not part of the default Windows package.
 
 ## Installation
 
-The Windows VCS install path is release-backed. Pick the package variant by
-installing from one of the repository tags:
+The Windows and Linux x86_64 VCS install paths are release-backed. Pick the
+package variant by installing from one of the repository tags:
 
 ```powershell
 pip install "vapoursynth-dfttest2 @ git+https://github.com/RyougiKukoc/vs-dfttest2-api4.git@cpu"
@@ -16,11 +16,22 @@ pip install "vapoursynth-dfttest2 @ git+https://github.com/RyougiKukoc/vs-dfttes
 pip install "vapoursynth-dfttest2 @ git+https://github.com/RyougiKukoc/vs-dfttest2-api4.git@cu129"
 ```
 
-`cpu` installs only `dfttest2_cpu.dll`. `cu121` installs `dfttest2_cpu.dll`
-plus CUDA 12.1 builds of `dfttest2_nvrtc.dll` and `dfttest2_cuda.dll`. `cu129`
-does the same with CUDA 12.9. If you switch between tags, use
+`cpu` installs only the CPU plugin. `cu121` installs the CPU plugin plus CUDA
+12.1 builds of the NVRTC and cuFFT backends. `cu129` does the same with CUDA
+12.9. Linux CUDA packages include the matching cuFFT/cudart runtime beside the
+plugins; the NVIDIA driver is supplied by the host. If you switch between tags, use
 `--force-reinstall` so pip replaces the already-installed wheel with the other
 variant.
+
+On Linux x86_64, the hook downloads `dfttest2-<variant>-linux-x86_64.zip` from
+the matching `cpu`, `cu121`, or `cu129` Release. The CPU wheel is tagged
+`manylinux_2_27_x86_64`. CUDA 12.1 and CUDA 12.9 wheels are tagged
+`manylinux_2_28_x86_64`, matching their UBI 8 toolkit build environment. The
+VapourSynth R79 runtime itself requires a compatible glibc 2.27 environment.
+Set `DFTTEST2_FORCE_BUILD=1` to use the local CMake fallback. It obtains API4
+headers and `vapoursynth.pc` from the isolated build environment's
+`vapoursynth/pkgconfig` directory while retaining any existing
+`PKG_CONFIG_PATH` entries.
 
 ## Usage
 
@@ -51,8 +62,9 @@ cmake --build build
 
 For reproducible release packages, use the GitHub Actions workflow. It builds
 and smoke-tests the CPU-only, CUDA 12.1, and CUDA 12.9 variants separately,
-then uploads `dfttest2-cpu-win64.zip`, `dfttest2-cu121-win64.zip`, or
-`dfttest2-cu129-win64.zip` to the matching release tag.
+then uploads the Windows and Linux zip/wheel pair for the selected variant to
+the matching release tag. Linux CUDA release builds are compiled separately
+for CUDA 12.1 and CUDA 12.9; do not install both CUDA variants together.
 
 ## Behavior fixes and regression checks
 

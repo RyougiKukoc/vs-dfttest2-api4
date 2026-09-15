@@ -1,12 +1,32 @@
 cmake_minimum_required(VERSION 3.22.0)
 
-project(vs-dfttest2 VERSION 10.1 LANGUAGES CXX)
+project(vs-dfttest2 VERSION 10.2 LANGUAGES CXX)
 
 set(ENABLE_CUDA OFF CACHE BOOL "Whether to compile with cuFFT backend")
 set(ENABLE_NVRTC ON CACHE BOOL "Whether to compile with NVRTC backend")
 set(ENABLE_CPU ON CACHE BOOL "Whether to compile with x86 backend")
 set(ENABLE_GCC OFF CACHE BOOL "Whether to compile with gcc vector extension backend")
 set(ENABLE_HIP OFF CACHE BOOL "Whether to compile with HIP backends")
+
+function(configure_dfttest2_plugin target)
+    # Keep Linux names stable in manifests and Release assets. CMake otherwise
+    # prepends "lib" to MODULE targets on Unix.
+    set_target_properties(${target} PROPERTIES PREFIX "")
+
+    if(UNIX AND NOT APPLE)
+        # CUDA RTC builds carry static NVRTC archives. Hiding their symbols
+        # prevents them from interposing with Python/VapourSynth's C++ runtime.
+        # Do not force the CentOS static C++ runtime into a shared object: its
+        # non-PIC pthread objects cannot be linked by the manylinux builder.
+        target_link_options(${target} PRIVATE
+            -Wl,--exclude-libs,ALL
+        )
+        set_target_properties(${target} PROPERTIES
+            BUILD_RPATH "$ORIGIN/vsmlrt-cuda"
+            INSTALL_RPATH "$ORIGIN/vsmlrt-cuda"
+        )
+    endif()
+endfunction()
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build" FORCE)
@@ -29,6 +49,7 @@ if(ENABLE_CUDA)
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
     )
+    configure_dfttest2_plugin(dfttest2_cuda)
 
     target_link_libraries(dfttest2_cuda PRIVATE CUDA::cuda_driver CUDA::cufft)
 
@@ -50,6 +71,7 @@ if(ENABLE_NVRTC)
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
     )
+    configure_dfttest2_plugin(dfttest2_nvrtc)
 
     target_link_libraries(dfttest2_nvrtc PRIVATE CUDA::cuda_driver)
 
@@ -148,11 +170,13 @@ if(ENABLE_HIP)
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
     )
+    configure_dfttest2_plugin(dfttest2_hip)
     set_target_properties(dfttest2_hiprtc PROPERTIES
         CXX_EXTENSIONS OFF
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
     )
+    configure_dfttest2_plugin(dfttest2_hiprtc)
 
     target_link_libraries(dfttest2_hip PRIVATE hip::host hip::hipfft hiprtc::hiprtc)
     target_link_libraries(dfttest2_hiprtc PRIVATE hip::host hiprtc::hiprtc)

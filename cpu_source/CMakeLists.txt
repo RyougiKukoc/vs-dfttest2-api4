@@ -27,8 +27,11 @@ set_target_properties(dfttest2_cpu PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
 )
+configure_dfttest2_plugin(dfttest2_cpu)
 
 target_include_directories(dfttest2_cpu PRIVATE ${VCL_HOME})
+find_package(Threads REQUIRED)
+target_link_libraries(dfttest2_cpu PRIVATE Threads::Threads)
 
 if(PKG_CONFIG_FOUND AND VS_FOUND)
     target_include_directories(dfttest2_cpu PRIVATE ${VS_INCLUDE_DIRS})
@@ -79,6 +82,7 @@ if(CPU_DISPATCH_TARGETS)
             CXX_EXTENSIONS OFF
             CXX_STANDARD 20
             CXX_STANDARD_REQUIRED ON
+            POSITION_INDEPENDENT_CODE ON
         )
 
         target_compile_definitions(${current_target} PRIVATE HAS_DISPATCH)
@@ -133,6 +137,7 @@ else()
         CXX_EXTENSIONS OFF
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
+        POSITION_INDEPENDENT_CODE ON
     )
 
     target_include_directories(getframe_impl PRIVATE ${VCL_HOME})

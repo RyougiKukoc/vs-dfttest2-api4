@@ -21,6 +21,7 @@ PLUGIN_NAME = "dfttest2"
 DEFAULT_REPOSITORY = "RyougiKukoc/vs-dfttest2-api4"
 CUDA_VARIANTS = {"cu121", "cu129"}
 SUPPORTED_VARIANTS = {"cpu", *CUDA_VARIANTS}
+VARIANT_MARKER = ROOT / ".dfttest2-variant"
 
 
 def _truthy(value: str | None) -> bool:
@@ -37,11 +38,10 @@ def _run_text(cmd: list[str]) -> str:
 
 def _repository_from_remote(remote: str) -> str | None:
     remote = remote.strip()
-    patterns = [
+    for pattern in (
         r"^https://github\.com/(?P<repo>[^/]+/[^/]+?)(?:\.git)?/?$",
         r"^git@github\.com:(?P<repo>[^/]+/[^/]+?)(?:\.git)?$",
-    ]
-    for pattern in patterns:
+    ):
         match = re.match(pattern, remote)
         if match:
             return match.group("repo")
@@ -56,19 +56,29 @@ def _default_repository() -> str:
     if github_repository:
         return github_repository
     remote = _run_text(["git", "config", "--get", "remote.origin.url"])
-    parsed = _repository_from_remote(remote)
-    return parsed or DEFAULT_REPOSITORY
+    return _repository_from_remote(remote) or DEFAULT_REPOSITORY
 
 
 def _variant_from_environment() -> str | None:
-    for name in ("DFTTEST2_VARIANT", "DFTTEST2_CUDA_VARIANT", "GITHUB_REF_NAME"):
+    for name in ("DFTTEST2_VARIANT", "DFTTEST2_CUDA_VARIANT", "GITHUB_REF_NAME", "DFTTEST2_PREBUILT_TAG"):
         value = os.environ.get(name)
         if value in SUPPORTED_VARIANTS:
             return value
-    tag = os.environ.get("DFTTEST2_PREBUILT_TAG")
-    if tag in SUPPORTED_VARIANTS:
-        return tag
     return None
+
+
+def _variant_from_marker() -> str | None:
+    """Read the committed selector before consulting mutable tag metadata."""
+    try:
+        variant = VARIANT_MARKER.read_text(encoding="ascii").strip()
+    except FileNotFoundError:
+        return None
+    if variant not in SUPPORTED_VARIANTS:
+        raise RuntimeError(
+            f"invalid DFTTest2 variant marker {variant!r} in {VARIANT_MARKER}; "
+            f"expected one of {sorted(SUPPORTED_VARIANTS)}"
+        )
+    return variant
 
 
 def _variant_from_git() -> str | None:
@@ -76,22 +86,38 @@ def _variant_from_git() -> str | None:
     matches = [tag for tag in tags_at_head.splitlines() if tag in SUPPORTED_VARIANTS]
     if matches:
         return sorted(matches)[0]
-
     described = _run_text(["git", "describe", "--tags", "--exact-match"])
-    if described in SUPPORTED_VARIANTS:
-        return described
-    return None
+    return described if described in SUPPORTED_VARIANTS else None
 
 
 def _selected_variant() -> str:
-    variant = _variant_from_environment() or _variant_from_git() or "cu121"
-    if variant not in SUPPORTED_VARIANTS:
-        raise RuntimeError(f"unsupported DFTTEST2 variant {variant!r}; expected one of {sorted(SUPPORTED_VARIANTS)}")
-    return variant
+    # Pip checks out @cpu/@cu121/@cu129 in detached clones. The committed
+    # marker keeps their asset identity independent of tag discovery details.
+    return _variant_from_environment() or _variant_from_marker() or _variant_from_git() or "cu121"
+
+
+def _native_suffix() -> str:
+    if sys.platform == "win32":
+        return ".dll"
+    if sys.platform == "darwin":
+        return ".dylib"
+    return ".so"
+
+
+def _asset_platform_suffix() -> str | None:
+    machine = platform.machine().lower()
+    if sys.platform == "win32" and machine in {"amd64", "x86_64"}:
+        return "win64"
+    if sys.platform.startswith("linux") and machine in {"amd64", "x86_64"}:
+        return "linux-x86_64"
+    return None
 
 
 def _default_asset_name(variant: str) -> str:
-    return f"{PLUGIN_NAME}-{variant}-win64.zip"
+    platform_suffix = _asset_platform_suffix()
+    if platform_suffix is None:
+        raise RuntimeError(f"no DFTTest2 Release payload exists for {sys.platform}/{platform.machine()}")
+    return f"{PLUGIN_NAME}-{variant}-{platform_suffix}.zip"
 
 
 def _default_prebuilt_url(variant: str) -> str:
@@ -108,47 +134,44 @@ def _prebuilt_source(variant: str) -> tuple[str, bool]:
     return _default_prebuilt_url(variant), False
 
 
-def _supports_prebuilt() -> bool:
-    return sys.platform == "win32" and platform.machine().lower() in {"amd64", "x86_64"}
-
-
 def _fetch_prebuilt_archive(source: str, destination: Path) -> None:
     candidate = Path(source)
     if candidate.exists():
         shutil.copy2(candidate, destination)
         return
-
     request = urllib.request.Request(source, headers={"User-Agent": "vapoursynth-dfttest2-build-hook"})
     with urllib.request.urlopen(request, timeout=60) as response, destination.open("wb") as handle:
         shutil.copyfileobj(response, handle)
 
 
+def _runtime_patterns() -> tuple[str, ...]:
+    if sys.platform == "win32":
+        return ("cufft64_*.dll", "cudart64_*.dll")
+    if sys.platform.startswith("linux"):
+        return ("libcufft.so.*", "libcudart.so.*")
+    return ()
+
+
 def _stage_package_from_zip(archive_path: Path, target_dir: Path, variant: str) -> None:
     with zipfile.ZipFile(archive_path) as zf:
         package_members = [
-            name
-            for name in zf.namelist()
+            name for name in zf.namelist()
             if name.replace("\\", "/").startswith(f"{PLUGIN_NAME}/") and not name.endswith("/")
         ]
         if not package_members:
             raise FileNotFoundError(f"prebuilt archive does not contain a {PLUGIN_NAME}/ package directory")
-
         for member in package_members:
-            normalized = member.replace("\\", "/")
-            relative = normalized.split("/", 1)[1]
+            relative = member.replace("\\", "/").split("/", 1)[1]
             out_path = target_dir / relative
             out_path.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(member) as src, out_path.open("wb") as dst:
                 shutil.copyfileobj(src, dst)
 
-    required = [
-        target_dir / "manifest.vs",
-        target_dir / "dfttest2_cpu.dll",
-    ]
+    suffix = _native_suffix()
+    required = [target_dir / "manifest.vs", target_dir / f"dfttest2_cpu{suffix}"]
     if variant in CUDA_VARIANTS:
-        required.append(target_dir / "dfttest2_cuda.dll")
-        required.append(target_dir / "dfttest2_nvrtc.dll")
-        for pattern in ("cufft64_*.dll", "cudart64_*.dll"):
+        required.extend([target_dir / f"dfttest2_cuda{suffix}", target_dir / f"dfttest2_nvrtc{suffix}"])
+        for pattern in _runtime_patterns():
             if not list((target_dir / "vsmlrt-cuda").glob(pattern)):
                 raise FileNotFoundError(f"prebuilt archive did not provide vsmlrt-cuda/{pattern}")
     for path in required:
@@ -160,25 +183,18 @@ def _stage_package_from_zip(archive_path: Path, target_dir: Path, variant: str) 
         for plugin_name in ("dfttest2_nvrtc", "dfttest2_cuda", "dfttest2_cpu"):
             if plugin_name not in manifest_text:
                 raise RuntimeError(f"CUDA prebuilt archive manifest does not list {plugin_name}")
-    if variant == "cpu":
-        if (target_dir / "dfttest2_nvrtc.dll").exists():
-            raise RuntimeError("cpu prebuilt archive unexpectedly contains dfttest2_nvrtc.dll")
-        if (target_dir / "dfttest2_cuda.dll").exists():
-            raise RuntimeError("cpu prebuilt archive unexpectedly contains dfttest2_cuda.dll")
-        if (target_dir / "vsmlrt-cuda").exists():
-            raise RuntimeError("cpu prebuilt archive unexpectedly contains vsmlrt-cuda")
-        if "dfttest2_nvrtc" in manifest_text:
-            raise RuntimeError("cpu prebuilt archive manifest unexpectedly lists dfttest2_nvrtc")
-        if "dfttest2_cuda" in manifest_text:
-            raise RuntimeError("cpu prebuilt archive manifest unexpectedly lists dfttest2_cuda")
+    elif any((target_dir / f"dfttest2_{backend}{suffix}").exists() for backend in ("nvrtc", "cuda")):
+        raise RuntimeError("cpu prebuilt archive unexpectedly contains a CUDA plugin")
+    elif (target_dir / "vsmlrt-cuda").exists():
+        raise RuntimeError("cpu prebuilt archive unexpectedly contains CUDA runtime files")
 
 
 def _stage_prebuilt_plugin(variant: str, target_dir: Path) -> bool:
     if _truthy(os.environ.get("DFTTEST2_FORCE_BUILD")):
         print("DFTTest2 wheel build: skipping prebuilt asset because DFTTEST2_FORCE_BUILD is set")
         return False
-    if not _supports_prebuilt():
-        print("DFTTest2 wheel build: prebuilt release asset path only applies to Windows x86_64; falling back to local build")
+    if _asset_platform_suffix() is None:
+        print("DFTTest2 wheel build: no matching platform Release asset; falling back to a native build")
         return False
 
     source, explicit = _prebuilt_source(variant)
@@ -205,37 +221,31 @@ def _run(cmd: list[str], *, env: dict[str, str]) -> None:
 
 def _stage_local_build(variant: str, target_dir: Path) -> None:
     env = os.environ.copy()
-    build_dir = ROOT / f"build-wheel-{variant}"
     plugins_root = target_dir.parent
-    _run([sys.executable, "tools/ci_prepare_windows.py"], env=env)
-    _run(
-        [
-            sys.executable,
-            "tools/ci_build_windows.py",
-            "--clean",
-            "--variant",
-            variant,
-            "--build-dir",
-            str(build_dir),
-            "--dist-dir",
-            str(plugins_root),
-        ],
-        env=env,
-    )
-    required = [target_dir / "dfttest2_cpu.dll"]
-    if variant in CUDA_VARIANTS:
-        required.append(target_dir / "dfttest2_cuda.dll")
-        required.append(target_dir / "dfttest2_nvrtc.dll")
-        for pattern in ("cufft64_*.dll", "cudart64_*.dll"):
+    if sys.platform == "win32":
+        _run([sys.executable, "tools/ci_prepare_windows.py"], env=env)
+        _run(
+            [sys.executable, "tools/ci_build_windows.py", "--clean", "--variant", variant,
+             "--build-dir", str(ROOT / f"build-wheel-{variant}"), "--dist-dir", str(plugins_root)],
+            env=env,
+        )
+    else:
+        _run(
+            [sys.executable, "tools/ci_build_native.py", "--clean", "--variant", variant,
+             "--build-dir", str(ROOT / f"build-wheel-native-{variant}"), "--dist-dir", str(plugins_root)],
+            env=env,
+        )
+
+    suffix = _native_suffix()
+    required = [target_dir / f"dfttest2_cpu{suffix}"]
+    if variant in CUDA_VARIANTS and sys.platform != "darwin":
+        required.extend([target_dir / f"dfttest2_cuda{suffix}", target_dir / f"dfttest2_nvrtc{suffix}"])
+        for pattern in _runtime_patterns():
             if not list((target_dir / "vsmlrt-cuda").glob(pattern)):
                 raise FileNotFoundError(target_dir / "vsmlrt-cuda" / pattern)
     for path in required:
         if not path.exists():
             raise FileNotFoundError(path)
-    if variant == "cpu" and (target_dir / "dfttest2_nvrtc.dll").exists():
-        raise RuntimeError(f"cpu local build unexpectedly staged {target_dir / 'dfttest2_nvrtc.dll'}")
-    if variant == "cpu" and (target_dir / "dfttest2_cuda.dll").exists():
-        raise RuntimeError(f"cpu local build unexpectedly staged {target_dir / 'dfttest2_cuda.dll'}")
 
 
 class CustomHook(BuildHookInterface[Any]):
@@ -245,13 +255,13 @@ class CustomHook(BuildHookInterface[Any]):
     def initialize(self, version: str, build_data: dict[str, Any]) -> None:
         del version
         build_data["pure_python"] = False
-        build_data["tag"] = f"py3-none-{next(tags.platform_tags())}"
+        platform_tag = os.environ.get("DFTTEST2_WHEEL_PLATFORM_TAG") or next(tags.platform_tags())
+        build_data["tag"] = f"py3-none-{platform_tag}"
         variant = _selected_variant()
 
         shutil.rmtree(self.build_dir, ignore_errors=True)
         shutil.rmtree(self.dist_dir.parent.parent, ignore_errors=True)
         self.dist_dir.mkdir(parents=True, exist_ok=True)
-
         if not _stage_prebuilt_plugin(variant, self.dist_dir):
             _stage_local_build(variant, self.dist_dir)
 

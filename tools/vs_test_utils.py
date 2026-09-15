@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
+import sys
 
 
 class TestEnvironmentPolicy:
@@ -52,13 +53,15 @@ def test_core(vs, *, autoload: bool = False):
         policy.close()
 
 
-def assert_plugin_paths(core, package: Path) -> None:
+def assert_plugin_paths(core, package: Path, *, expected_backends: tuple[str, ...] | None = None) -> None:
+    suffix = ".dll" if sys.platform == "win32" else ".dylib" if sys.platform == "darwin" else ".so"
     for backend in ("cpu", "nvrtc", "cuda"):
         namespace = "dfttest2_" + backend
-        expected = package / (namespace + ".dll")
+        expected = package / (namespace + suffix)
         loaded = hasattr(core, namespace)
-        if expected.is_file() != loaded:
-            raise RuntimeError(f"unexpected presence of {namespace}: expected {expected.is_file()}, loaded {loaded}")
+        should_be_loaded = expected.is_file() if expected_backends is None else backend in expected_backends
+        if should_be_loaded != loaded:
+            raise RuntimeError(f"unexpected presence of {namespace}: expected loaded={should_be_loaded}, loaded={loaded}")
         if loaded:
             actual = Path(getattr(core, namespace).plugin_path)
             if not actual.is_file() or not actual.samefile(expected):

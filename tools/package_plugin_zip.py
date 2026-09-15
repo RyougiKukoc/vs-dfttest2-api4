@@ -17,19 +17,19 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--input-dir", default=str(ROOT / "dist" / "windows"))
     parser.add_argument("--output", default=str(ROOT / "dist" / "dfttest2-cu121-win64.zip"))
     parser.add_argument("--variant", choices=sorted(SUPPORTED_VARIANTS), default="cu121")
+    parser.add_argument("--platform", choices=("win64", "linux-x86_64"), default="win64")
     args = parser.parse_args(argv)
 
     input_dir = Path(args.input_dir).resolve()
     output = Path(args.output).resolve()
     package_dir = input_dir / PLUGIN_NAME
-    required = [
-        package_dir / "dfttest2_cpu.dll",
-        package_dir / "manifest.vs",
-    ]
+    suffix = ".dll" if args.platform == "win64" else ".so"
+    required = [package_dir / ("dfttest2_cpu" + suffix), package_dir / "manifest.vs"]
     if args.variant in CUDA_VARIANTS:
-        required.append(package_dir / "dfttest2_cuda.dll")
-        required.append(package_dir / "dfttest2_nvrtc.dll")
-        for pattern in ("cufft64_*.dll", "cudart64_*.dll"):
+        required.append(package_dir / ("dfttest2_cuda" + suffix))
+        required.append(package_dir / ("dfttest2_nvrtc" + suffix))
+        runtime_patterns = ("cufft64_*.dll", "cudart64_*.dll") if args.platform == "win64" else ("libcufft.so.*", "libcudart.so.*")
+        for pattern in runtime_patterns:
             if not list((package_dir / "vsmlrt-cuda").glob(pattern)):
                 raise FileNotFoundError(package_dir / "vsmlrt-cuda" / pattern)
     for path in required:
@@ -40,10 +40,10 @@ def main(argv: list[str]) -> int:
         for plugin_name in ("dfttest2_nvrtc", "dfttest2_cuda", "dfttest2_cpu"):
             if plugin_name not in manifest_text:
                 raise RuntimeError(f"CUDA package manifest does not list {plugin_name}")
-    if args.variant == "cpu" and (package_dir / "dfttest2_nvrtc.dll").exists():
-        raise RuntimeError(f"cpu package unexpectedly contains {package_dir / 'dfttest2_nvrtc.dll'}")
-    if args.variant == "cpu" and (package_dir / "dfttest2_cuda.dll").exists():
-        raise RuntimeError(f"cpu package unexpectedly contains {package_dir / 'dfttest2_cuda.dll'}")
+    if args.variant == "cpu" and (package_dir / ("dfttest2_nvrtc" + suffix)).exists():
+        raise RuntimeError(f"cpu package unexpectedly contains dfttest2_nvrtc{suffix}")
+    if args.variant == "cpu" and (package_dir / ("dfttest2_cuda" + suffix)).exists():
+        raise RuntimeError(f"cpu package unexpectedly contains dfttest2_cuda{suffix}")
     if args.variant == "cpu" and (package_dir / "vsmlrt-cuda").exists():
         raise RuntimeError(f"cpu package unexpectedly contains {package_dir / 'vsmlrt-cuda'}")
 

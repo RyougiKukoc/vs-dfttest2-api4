@@ -1,4 +1,4 @@
-name: Build Windows DFTTest2
+name: Build DFTTest2 packages
 
 on:
   push:
@@ -34,14 +34,6 @@ on:
       - "tools/**"
       - ".github/workflows/windows.yml"
   workflow_dispatch:
-    inputs:
-      upload_release:
-        description: "Upload artifacts to the cpu, cu121, and cu129 releases"
-        default: false
-        type: boolean
-  release:
-    types:
-      - published
 
 permissions:
   contents: write
@@ -243,22 +235,180 @@ jobs:
           name: dfttest2-${{ matrix.variant }}-wheel-win64
           path: dist/wheels-${{ matrix.variant }}
 
-      - name: Upload release assets
-        if: |
-          (startsWith(github.ref, 'refs/tags/') && github.ref_name == matrix.variant) ||
-          (github.event_name == 'release' && github.event.release.tag_name == matrix.variant) ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_release == 'true')
-        shell: powershell
+  build-linux:
+    name: Build Linux ${{ matrix.variant }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cpu
+            image: quay.io/pypa/manylinux2014_x86_64
+            wheel_tag: manylinux_2_27_x86_64
+            cuda: false
+          - variant: cu121
+            image: nvidia/cuda:12.1.1-devel-ubi8
+            wheel_tag: manylinux_2_28_x86_64
+            cuda: true
+          - variant: cu129
+            image: nvidia/cuda:12.9.1-devel-ubi8
+            wheel_tag: manylinux_2_28_x86_64
+            cuda: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build CPU payload in manylinux2014
+        if: ${{ !matrix.cuda }}
+        run: |
+          docker run --rm -v "$PWD:/workspace" -w /workspace ${{ matrix.image }} bash -lc '
+            set -eux
+            export PY=/opt/python/cp313-cp313/bin/python
+            export PATH=/opt/python/cp313-cp313/bin:$PATH
+            $PY -m pip install --disable-pip-version-check ninja
+            rm -rf /tmp/vs-sdk
+            mkdir -p /tmp/vs-sdk /tmp/vs-wheel
+            $PY -m pip download --disable-pip-version-check VapourSynth==79 --only-binary=:all: --no-deps --platform manylinux_2_27_x86_64 --implementation cp --python-version 313 --abi abi3 --dest /tmp/vs-wheel
+            unzip -q /tmp/vs-wheel/*.whl -d /tmp/vs-sdk
+            $PY tools/ci_build_native.py --clean --variant cpu --vapoursynth-root /tmp/vs-sdk --dist-dir dist/linux-cpu
+            $PY tools/package_plugin_zip.py --platform linux-x86_64 --variant cpu --input-dir dist/linux-cpu --output dist/dfttest2-cpu-linux-x86_64.zip
+            readelf --version-info dist/linux-cpu/dfttest2/dfttest2_cpu.so
+          '
+
+      - name: Build CUDA payload in UBI 8
+        if: ${{ matrix.cuda }}
+        run: |
+          docker run --rm -v "$PWD:/workspace" -w /workspace ${{ matrix.image }} bash -lc '
+            set -eux
+            dnf install -y python39 python39-pip cmake ninja-build gcc-toolset-12-gcc-c++ unzip pkgconf-pkg-config
+            source /opt/rh/gcc-toolset-12/enable
+            python3.9 -m pip install --upgrade pip
+            rm -rf /tmp/vs-sdk
+            mkdir -p /tmp/vs-sdk /tmp/vs-wheel
+            python3.9 -m pip download --disable-pip-version-check VapourSynth==79 --only-binary=:all: --no-deps --platform manylinux_2_28_x86_64 --implementation cp --python-version 313 --abi abi3 --dest /tmp/vs-wheel
+            unzip -q /tmp/vs-wheel/*.whl -d /tmp/vs-sdk
+            python3.9 tools/ci_build_native.py --clean --variant ${{ matrix.variant }} --vapoursynth-root /tmp/vs-sdk --cuda-root /usr/local/cuda --dist-dir dist/linux-${{ matrix.variant }}
+            python3.9 tools/package_plugin_zip.py --platform linux-x86_64 --variant ${{ matrix.variant }} --input-dir dist/linux-${{ matrix.variant }} --output dist/dfttest2-${{ matrix.variant }}-linux-x86_64.zip
+            readelf --version-info dist/linux-${{ matrix.variant }}/dfttest2/dfttest2_nvrtc.so
+            readelf --version-info dist/linux-${{ matrix.variant }}/dfttest2/dfttest2_cuda.so
+          '
+
+      - name: Upload Linux release zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: dfttest2-${{ matrix.variant }}-release-zip-linux
+          path: dist/dfttest2-${{ matrix.variant }}-linux-x86_64.zip
+
+  validate-linux:
+    name: Validate Linux ${{ matrix.variant }}
+    needs: build-linux
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cpu
+            wheel_tag: manylinux_2_27_x86_64
+          - variant: cu121
+            wheel_tag: manylinux_2_28_x86_64
+          - variant: cu129
+            wheel_tag: manylinux_2_28_x86_64
+
+    steps:
+      - name: Checkout smoke helpers
+        uses: actions/checkout@v4
+
+      - name: Download Linux release zip
+        uses: actions/download-artifact@v4
+        with:
+          name: dfttest2-${{ matrix.variant }}-release-zip-linux
+          path: dist
+
+      - name: Set up CPython
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install validation dependencies
+        run: python -m pip install --upgrade build cmake hatchling ninja packaging "VapourSynth==79"
+
+      - name: Inspect and explicitly load release payload
+        run: |
+          unzip -q dist/dfttest2-${{ matrix.variant }}-linux-x86_64.zip -d release
+          test -f release/dfttest2/dfttest2_cpu.so
+          test -f release/dfttest2/manifest.vs
+          readelf --version-info release/dfttest2/dfttest2_cpu.so
+          python tools/smoke_linux_package.py --artifact-zip dist/dfttest2-${{ matrix.variant }}-linux-x86_64.zip --skip-cuda
+
+      - name: Build wheel from the tested Linux payload
+        env:
+          DFTTEST2_PREBUILT_URL: ${{ github.workspace }}/dist/dfttest2-${{ matrix.variant }}-linux-x86_64.zip
+          DFTTEST2_VARIANT: ${{ matrix.variant }}
+          DFTTEST2_WHEEL_PLATFORM_TAG: ${{ matrix.wheel_tag }}
+        run: python -m build --wheel --no-isolation --outdir dist/wheels-linux-${{ matrix.variant }}
+
+      - name: Inspect wheel native ABI
+        run: |
+          unzip -q dist/wheels-linux-${{ matrix.variant }}/*.whl -d wheel
+          find wheel/vapoursynth/plugins/dfttest2 -type f -name '*.so' -print -exec readelf --version-info {} \;
+
+      - name: Install and autoload CPU wheel
+        if: ${{ matrix.variant == 'cpu' }}
+        run: |
+          python -m pip install --force-reinstall --no-deps dist/wheels-linux-cpu/*.whl
+          python tools/smoke_linux_package.py --installed
+
+      - name: Upload Linux wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: dfttest2-${{ matrix.variant }}-wheel-linux
+          path: dist/wheels-linux-${{ matrix.variant }}
+
+  publish:
+    name: Publish selected variant release
+    if: ${{ startsWith(github.ref, 'refs/tags/') && (github.ref_name == 'cpu' || github.ref_name == 'cu121' || github.ref_name == 'cu129') }}
+    needs: [build, build-linux, validate-linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout smoke helpers
+        uses: actions/checkout@v4
+
+      - name: Download all release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: assets
+
+      - name: Upload one Windows/Linux asset set
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ matrix.variant }}
+          TAG: ${{ github.ref_name }}
         run: |
-          $tag = $env:RELEASE_TAG
-          $assets = @("dist\dfttest2-${{ matrix.variant }}-win64.zip")
-          $assets += Get-ChildItem "dist\wheels-${{ matrix.variant }}\*.whl" | Select-Object -ExpandProperty FullName
-          & cmd.exe /d /c "gh release view $tag --repo $env:GITHUB_REPOSITORY >NUL 2>NUL"
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $assets --clobber --repo $env:GITHUB_REPOSITORY
-          } else {
-            gh release create $tag $assets --title $tag --notes "Automated DFTTest2 ${{ matrix.variant }} Windows build." --repo $env:GITHUB_REPOSITORY
-          }
+          set -eux
+          assets=(
+            "$(find "assets/dfttest2-${TAG}-release-zip" -type f -name "dfttest2-${TAG}-win64.zip")"
+            "$(find "assets/dfttest2-${TAG}-wheel-win64" -type f -name 'vapoursynth_dfttest2-*-win_amd64.whl')"
+            "$(find "assets/dfttest2-${TAG}-release-zip-linux" -type f -name "dfttest2-${TAG}-linux-x86_64.zip")"
+            "$(find "assets/dfttest2-${TAG}-wheel-linux" -type f -name 'vapoursynth_dfttest2-*-manylinux_*.whl')"
+          )
+          for asset in "${assets[@]}"; do test -n "$asset"; done
+          test "${#assets[@]}" -eq 4
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "${assets[@]}" --title "$TAG" --notes "Automated DFTTest2 ${TAG} Windows and Linux build." --repo "$GITHUB_REPOSITORY"
+          fi
+
+      - name: Prove remote VCS asset selection
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python -m pip install --upgrade "VapourSynth==79"
+          python -m pip install --force-reinstall --no-deps -v "vapoursynth-dfttest2 @ git+https://github.com/${GITHUB_REPOSITORY}.git@${TAG}" 2>&1 | tee pip-vcs.log
+          grep "DFTTest2 wheel build: using ${TAG} prebuilt release asset" pip-vcs.log
+          test -f "$(python -c 'import sysconfig; print(sysconfig.get_paths()["platlib"])')/vapoursynth/plugins/dfttest2/dfttest2_cpu.so"

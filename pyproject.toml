@@ -1,10 +1,16 @@
 [build-system]
-requires = ["hatchling>=1.30", "packaging>=24.0"]
+requires = [
+  "hatchling>=1.30",
+  "packaging>=24.0",
+  "cmake>=3.22",
+  "ninja>=1.11",
+  "VapourSynth>=79",
+]
 build-backend = "hatchling.build"
 
 [project]
 name = "vapoursynth-dfttest2"
-version = "10.1"
+version = "10.2"
 description = "DFTTest2 frequency-domain denoiser plugin for VapourSynth"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -40,6 +46,8 @@ include = [
 ]
 artifacts = [
   "vapoursynth/plugins/**/*.dll",
+  "vapoursynth/plugins/**/*.so",
+  "vapoursynth/plugins/**/*.dylib",
   "vapoursynth/plugins/**/manifest.vs",
   "vapoursynth/plugins/**/LICENSE",
 ]
